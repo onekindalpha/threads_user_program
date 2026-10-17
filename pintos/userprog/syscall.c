@@ -65,7 +65,6 @@ check_address(const void *addr) {
 		sys_exit(-1);
 }
 //power_off가 선언된 헤더(Threads/init.h)를 syscall.c에서 include하고 있음. 
-//power_off가 선언된 헤더(Threads/init.h)를 syscall.c에서 include하고 있음. 
 void
 syscall_handler (struct intr_frame *f) {
 	switch (f->R.rax) { 
@@ -79,6 +78,7 @@ syscall_handler (struct intr_frame *f) {
 		// exit관련 함수가. 
 		case SYS_EXIT: {
 			sys_exit ((int) f->R.rdi);
+			break;
 		 }
 		// create
 		case SYS_CREATE: {
@@ -95,10 +95,10 @@ syscall_handler (struct intr_frame *f) {
 			lock_release(&filesys_lock);
 			break;
 		}
-		case SYS_OPEN: {
-			/* rdi: 파일 이름 주소 */
-			const char *file = (const char *) f->R.rdi;
-		}
+		// case SYS_OPEN: {
+		// 	/* rdi: 파일 이름 주소 */
+		// 	const char *file = (const char *) f->R.rdi;
+		// }
 		case SYS_REMOVE: {
 			const char *file = (const char *) f->R.rdi;
 			check_address(file);
