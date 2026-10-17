@@ -61,7 +61,7 @@ check_address(const void *addr) {
 	if (!is_user_vaddr(addr))
 		sys_exit(-1);
 	/* 매핑 되지 않았으면 */
-	if (pml4_get_page(thread_current ()->pml4, addr) == NULL)
+	if (pml4_get_page(thread_current()->pml4, addr) == NULL)
 		sys_exit(-1);
 }
 //power_off가 선언된 헤더(Threads/init.h)를 syscall.c에서 include하고 있음. 
@@ -92,6 +92,18 @@ syscall_handler (struct intr_frame *f) {
 			/* filesys_create(이름, 크기 결과를 )*/
 			f-> R.rax = filesys_create(file, initial_size);
 			/* 락 풀기 */
+			lock_release(&filesys_lock);
+			break;
+		}
+		case SYS_OPEN: {
+			/* rdi: 파일 이름 주소 */
+			const char *file = (const char *) f->R.rdi;
+		}
+		case SYS_REMOVE: {
+			const char *file = (const char *) f->R.rdi;
+			check_address(file);
+			lock_acquire(&filesys_lock);
+			f->R.rax = filesys_remove(file);
 			lock_release(&filesys_lock);
 			break;
 		}
