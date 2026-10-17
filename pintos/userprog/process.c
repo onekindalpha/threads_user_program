@@ -22,6 +22,10 @@
 #include "vm/vm.h"
 #endif
 
+#define MAX_ARGS 64 /*인자 최대 개수*/
+
+static void argument_stack (char **argv, int argc, struct intr_frame *_if);
+
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
@@ -49,9 +53,12 @@ process_create_initd (const char *file_name) {
 	if (fn_copy == NULL)
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
-
+	char thread_name[16];
+  char *save_ptr;
+	strlcpy (thread_name, file_name, PGSIZE);
+	char *name = strtok_r(thread_name ," ", &save_ptr);
 	/* Create a new thread to execute FILE_NAME. */
-	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
+	tid = thread_create (name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 	return tid;
@@ -177,19 +184,76 @@ process_exec (void *f_name) {
 	process_cleanup ();
 
 	/* And then load the binary */
-	success = load (file_name, &_if);
+	/* 여기서 파일 네임 넣는 부분을 수정을 하면 됨. */
+	/* strtok_r을 쓰면 될 것 같음. */
+	char *argv[MAX_ARGS];
+	int argc = 0;
+	char *token, *save_ptr;
+	/* 명령줄을 공백으로 나눠서 argv배열에 저장을 함 
+	ex. argv[0] = "args-single", argv[1] ="onearg"
+	arv[i]는 모두 File_name 페이지 안을 가리킴. 스택에 복사하기 전에 해제 금지. */
+	for (token = strtok_r(file_name, " ", &save_ptr); 
+			token != NULL && argc < MAX_ARGS; 
+			token = strtok_r(NULL, " ", &save_ptr)) {
+		argv[argc++]=token;
+	}
+	/* 배열의 첫번째 칸이라는 뜻임 "args-single"의 주소만 들어있음. */
+	success = load(argv[0], &_if);
 
 	/* If load failed, quit. */
-	palloc_free_page (file_name);
-	if (!success)
+	if (!success) {
+		palloc_free_page (file_name);
 		return -1;
-
+	}
+	/* do_iret전에 부르는 이유는 유저 프로그램이 시작하자 마자 인자를 읽고, _start는 바로 Main(argc, argv)를 부르고, main은 바로 argv[0]을 읽음. 
+	유저 코드가 실행되기 전에 스택에 인자가 다 올라가 있어야 함.*/
+	argument_stack (argv, argc, &_if);
+	
 	/* Start switched process. */
+	// printf ("[exec] rip=%p rsp=%p rdi=%lld rsi=%p\n",
+  //       (void *) _if.rip, (void *) _if.rsp,
+  //       (long long) _if.R.rdi, (void *) _if.R.rsi);
+	// hex_dump (_if.rsp, (void *) _if.rsp, USER_STACK - _if.rsp, true);
 	do_iret (&_if);
 	NOT_REACHED ();
 }
 
+/* fn_copy(커널 메모리)에 있는 문자열을 비어 있는 유저 스택으로 복사를 하는 것임. 
+argv 주소도 커널 주소(Fn_copy안)이 아니라 유저 스택에 새로 복사한 위치로 다시 만들어서, 
+지역변수인 addrs[]에 임시로 저장을 하고, 유저 스택의 argv[i]칸에 저장을 함. */
+static void
+argument_stack (char **argv, int argc, struct intr_frame *if_) {
+	/* 유저 스택에 복사한 문자열 주소를 임시 저장 (커널 스택의 지역 변수) */
+	char *addrs[MAX_ARGS];
+	/* 스택은 아래로 자라므로 마지막 인자부터 넣어 argv[0]이 가장 낮은 주소에 오게 함 */
+	for (int i = argc - 1 ; i >= 0 ;i--) {
+		/* 문자열 길이 + '\0'만큼 스택 공간 확보 */
+		if_->rsp -= strlen(argv[i]) + 1; 
+		/* 확보한 자리에 문자열 복사 */
+		memcpy((void *) if_->rsp, argv[i], strlen(argv[i]) + 1);
+		/* 유저 스택에 복사된 문자열의 주소를 저장함. 나중에 argv 배열로 Push함.  */
+		addrs[i] = (char *) if_->rsp;
+	}
+	/* 8바이트 정렬한다.  */
+	if_->rsp -= if_->rsp % 8;
+	/* NULL push를 함. */
+	if_->rsp -= 8;
+	*(uint64_t *) if_->rsp = 0;
+	/* addrs[i]에 저장해둔 값(유저 스택 문자열 주소)를 유저 스택에 push함.
+		addrs 자체 (커널 스택)의 주소가 아니라 그 안의 값을 복사하는 것이다. */
+	for (int i = argc - 1 ; i >= 0 ;i--) {
+		if_->rsp -= 8;
+		*(char **) if_->rsp = addrs[i];
+	}
+	/* rdi, rsi 설정 - main에 들어갈 argc, argv라는 인자임. */
+	if_->R.rdi = argc;
+	if_->R.rsi = if_->rsp;
 
+	/* 가짜 리턴 주소 push */
+	if_->rsp -=8;
+	*(uint64_t *) if_->rsp = 0;
+	
+	}
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
  * exception), returns -1.  If TID is invalid or if it was not a
@@ -204,6 +268,8 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	/* main이 꺼지지 않도록 함. */
+	timer_sleep(100);
 	return -1;
 }
 
