@@ -55,7 +55,7 @@ process_create_initd (const char *file_name) {
 	strlcpy (fn_copy, file_name, PGSIZE);
 	char thread_name[16];
   char *save_ptr;
-	strlcpy (thread_name, file_name, PGSIZE);
+	strlcpy (thread_name, file_name, sizeof thread_name);
 	char *name = strtok_r(thread_name ," ", &save_ptr);
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (name, PRI_DEFAULT, initd, fn_copy);
