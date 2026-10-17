@@ -37,10 +37,27 @@ syscall_init (void) {
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
 }
 
-/* The main system call interface */
+//power_off가 선언된 헤더(Threads/init.h)를 syscall.c에서 include하고 있음. 
+//power_off가 선언된 헤더(Threads/init.h)를 syscall.c에서 include하고 있음. 
 void
-syscall_handler (struct intr_frame *f UNUSED) {
-	// TODO: Your implementation goes here.
-	printf ("system call!\n");
-	thread_exit ();
+syscall_handler (struct intr_frame *f) {
+	switch (f->R.rax) { 
+		case SYS_WRITE:
+		  // rdi:fd, rsi:buffer, rdx:size
+			/* fd가 1이면 putbuf(buffer, size), 반환값은 f->R.rax에*/
+			if (f->R.rdi == 1)
+				putbuf((const char *) f->R.rsi, (size_t) f->R.rdx);
+				f->R.rax = f->R.rdx;
+			break;
+		// exit관련 함수가. 
+		case SYS_EXIT: {
+			// status를 int로 꺼내기. %s: exit(%d)\n 형식으로 출력. 스레드 종료
+			int a = (int) f->R.rdi;
+			printf("%s: exit(%d)\n", thread_current()->name, a);
+			thread_exit();
+			break;
+		 }
+		 default:
+			thread_exit ();
+ }
 }
