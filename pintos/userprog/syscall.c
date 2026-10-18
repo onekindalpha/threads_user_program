@@ -16,7 +16,7 @@ static void sys_exit (int status);
 #include "filesys/filesys.h"
 #include "threads/vaddr.h"
 #include "threads/mmu.h"
-static struct lock filesys_lock;
+struct lock filesys_lock;
 
 /* System call.
  *
@@ -47,8 +47,10 @@ syscall_init (void) {
 }
 
 /* 종료 메시지 출력 및 thread_exit() 을 부름. */
-static void
+void
 sys_exit (int status) {
+	if (lock_held_by_current_thread(&filesys_lock))
+		lock_release(&filesys_lock);
 	printf("%s: exit(%d)\n", thread_current()->name, status);
 	thread_exit();
 }
