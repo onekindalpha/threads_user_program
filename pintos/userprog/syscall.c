@@ -51,6 +51,7 @@ void
 sys_exit (int status) {
 	if (lock_held_by_current_thread(&filesys_lock))
 		lock_release(&filesys_lock);
+	thread_current()->exit_status = status;
 	printf("%s: exit(%d)\n", thread_current()->name, status);
 	thread_exit();
 }
@@ -66,6 +67,8 @@ check_address(const void *addr) {
 	if (pml4_get_page(thread_current()->pml4, addr) == NULL)
 		sys_exit(-1);
 }
+
+
 //power_off가 선언된 헤더(Threads/init.h)를 syscall.c에서 include하고 있음. 
 void
 syscall_handler (struct intr_frame *f) {
