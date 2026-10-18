@@ -11,7 +11,7 @@
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
 static void check_address (const void *addr);
-static void sys_exit (int status);
+void sys_exit (int status);
 #include "threads/synch.h"
 #include "filesys/filesys.h"
 #include "threads/vaddr.h"
