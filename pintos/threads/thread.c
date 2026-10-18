@@ -607,6 +607,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->nice = 0;   /* [문서 B.1] 첫 스레드의 nice는 0 (나머지는 thread_create에서 부모값으로 덮어씀) */
 	t->recent_cpu = 0; /* [문서 B.3] 첫 스레드의 recent_cpu는 0 */
 	/* [구현] timer 인터럽트가 all_list를 순회하므로 인터럽트를 끄고 추가 */
+#ifdef USERPROG
+	t->exit_status =0;
+#endif
 	t->magic = THREAD_MAGIC;
 	/* timer 인터럽트가 all_list를 순회하므로 인터럽트를 끄고 추가 */
 	enum intr_level old_level = intr_disable();

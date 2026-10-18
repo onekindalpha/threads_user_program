@@ -9,6 +9,7 @@
 #include "intrinsic.h"
 #include "threads/init.h"
 void syscall_entry (void);
+static void check_string (const char *str);
 void syscall_handler (struct intr_frame *);
 static void check_address (const void *addr);
 void sys_exit (int status);
@@ -68,7 +69,20 @@ check_address(const void *addr) {
 		sys_exit(-1);
 }
 
+static void
+check_string(const char *str) {
+	while (true) {
+		check_address(str);
+		if (*str == '\0')
+			return;
+		str++;
+	}
+}
 
+static void
+check_buffer (const void *buf, unsigned size) {
+
+}
 //power_off가 선언된 헤더(Threads/init.h)를 syscall.c에서 include하고 있음. 
 void
 syscall_handler (struct intr_frame *f) {
@@ -91,7 +105,7 @@ syscall_handler (struct intr_frame *f) {
 			const char *file = (const char *) f->R.rdi;
 			unsigned initial_size = (unsigned) f->R.rsi;
 			/* 유저 포인터 검증 함수 */
-			check_address(file);	 
+			check_string(file);	 
 			/* 락 잡기 */
 			lock_acquire(&filesys_lock);
 			/* filesys_create(이름, 크기 결과를 )*/
@@ -106,7 +120,7 @@ syscall_handler (struct intr_frame *f) {
 		// }
 		case SYS_REMOVE: {
 			const char *file = (const char *) f->R.rdi;
-			check_address(file);
+			check_string(file);
 			lock_acquire(&filesys_lock);
 			f->R.rax = filesys_remove(file);
 			lock_release(&filesys_lock);
