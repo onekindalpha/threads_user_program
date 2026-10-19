@@ -201,6 +201,7 @@ process_exec (void *f_name) {
  * does nothing. */
 int
 process_wait (tid_t child_tid UNUSED) {
+	while(1);
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
@@ -328,7 +329,12 @@ load (const char *file_name, struct intr_frame *if_) {
 	off_t file_ofs;
 	bool success = false;
 	int i;
-
+	char *argv[64];
+	int argc = 0;
+	char *save_ptr;
+	char *token;
+	char *file_name_copy = NULL;
+	char *user_memory_top[64];
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
@@ -336,12 +342,18 @@ load (const char *file_name, struct intr_frame *if_) {
 	process_activate (thread_current ());
 
 	/* Open executable file. */
-	file = filesys_open (file_name);
-	if (file == NULL) {
-		printf ("load: %s: open failed\n", file_name);
+	file_name_copy = palloc_get_page(0);
+	if (file_name_copy == NULL)
+		goto done;
+	strlcpy(file_name_copy, file_name, PGSIZE);
+	for (token = strtok_r(file_name_copy, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr))
+		argv[argc++] = token;
+	file = filesys_open(argv[0]);
+	if (file == NULL)
+	{
+		printf("load: %s: open failed\n", argv[0]);
 		goto done;
 	}
-
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
@@ -350,7 +362,7 @@ load (const char *file_name, struct intr_frame *if_) {
 			|| ehdr.e_version != 1
 			|| ehdr.e_phentsize != sizeof (struct Phdr)
 			|| ehdr.e_phnum > 1024) {
-		printf ("load: %s: error loading executable\n", file_name);
+		printf ("load: %s: error loading executable\n", argv[0]);
 		goto done;
 	}
 
@@ -413,13 +425,33 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* Start address. */
 	if_->rip = ehdr.e_entry;
-
-	/* TODO: Your code goes here.
-	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
+	if_->R.rdi = argc;
+	for (i = argc - 1; i >= 0; i--)
+	{
+		unsigned int len = strlen(argv[i]) + 1;
+		if_->rsp -= len;
+		memcpy((void *)if_->rsp, argv[i], len);
+		user_memory_top[i] = (char *)if_->rsp;
+	}
+	while (if_->rsp % 8 != 0)
+	{
+		if_->rsp -= 1;
+		*(uint8_t *)if_->rsp = 0;
+	}
+	if_->rsp -= 8;
+	*(uint64_t *)if_->rsp = 0;
+	for(i = argc-1; i >= 0; i--)
+	{
+		if_->rsp -= 8;
+		*(uint64_t *)if_->rsp = (uint64_t)user_memory_top[i];
+	}
+	if_->R.rsi = if_->rsp;
+	if_->rsp -= 8;
+	*(uint64_t *)if_->rsp = 0;
 	success = true;
 
 done:
+palloc_free_page(file_name_copy);
 	/* We arrive here whether the load is successful or not. */
 	file_close (file);
 	return success;
