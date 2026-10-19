@@ -95,14 +95,18 @@ sys_exit (int status) {
 static void
 check_address(const void *addr) {
 	/* 유저 포인터가 널이면*/
-	if (addr == NULL)
+	if (addr == NULL) {
+		printf("check_address: NULL\n");
 		sys_exit(-1);
+	}
 	/* 커널 주소이면 */
-	if (!is_user_vaddr(addr))
+	if (!is_user_vaddr(addr)) {
 		sys_exit(-1);
+	 }
 	/* 매핑 되지 않았으면 */
-	if (pml4_get_page(thread_current()->pml4, addr) == NULL)
+	if (pml4_get_page(thread_current()->pml4, addr) == NULL) {
 		sys_exit(-1);
+		}
 }
 
 static void
@@ -115,10 +119,30 @@ check_string(const char *str) {
 	}
 }
 
-// static void
-// check_buffer (const void *buf, unsigned size) {
+static void
+check_buffer (const void *buf, unsigned size) {		
+	/* 요청 사이즈 */
+	if (size == 0) 
+			return;
+	/* 버퍼의 실제 시작 주소 */
+	uintptr_t start = (uintptr_t) buf;
+	/* 주소 덧셈의 오버플로 검사 */
+	if (start > UINTPTR_MAX - (size - 1))
+		sys_exit(-1);
+	uintptr_t end = start + size -1 ;
+	/* 버퍼의 시작주소와 마지막 주소 검사*/
+	check_address(buf);
+	check_address((const void *)end);
+	/* 검사할 첫 페이지의 시작 주소 계산 */
+	uintptr_t first_page = (uintptr_t) pg_round_down((void *) start);
+	/* 검사할 마지막 페이지의 시작 주소 계산 */
+	uintptr_t last_page = (uintptr_t) pg_round_down((void *) end);
+	/* 버퍼가 걸치는 모든 페이지 검사 */
+	for (uintptr_t page = first_page; page <=last_page ; page += PGSIZE) {
+		check_address((void *) page);
+	}
+}
 
-// }
 //power_off가 선언된 헤더(Threads/init.h)를 syscall.c에서 include하고 있음. 
 void
 syscall_handler (struct intr_frame *f) {
@@ -169,6 +193,51 @@ syscall_handler (struct intr_frame *f) {
 		}
 		lock_release(&filesys_lock);
 		break;
+		}
+		case SYS_READ: {
+			int fd = (int) f->R.rdi;
+			/* 이게 전달을 받은 버퍼의 주소임 */
+			void *buffer = (void *) f->R.rsi;
+			unsigned size = (unsigned) f->R.rdx;
+			// printf("[SYS_READ] fd=%d, buffer=%p, size=%u\n",
+			// 			fd, buffer, size);
+			/* 요청크기가 0이면 */
+			if (size == 0) {
+				f->R.rax = 0;
+				break;
+			}
+			/* fd가 1인경우 -1을 반환 */
+			if (fd < 0 || fd== 1) {
+				/* 아마 새기고 반환을 하는 것임. */
+				f->R.rax = -1;
+				break;
+			}
+
+			// printf("[SYS_READ] before check_buffer\n");
+    	check_buffer(buffer, size);
+    	// printf("[SYS_READ] after check_buffer\n");
+			/* 일반 파일이면 */
+			if (fd >=2) {
+				struct file *file = fd_get(fd);
+				// printf("[SYS_READ] file=%p\n", file);
+				if (file == NULL)
+					sys_exit(-1);
+				lock_acquire(&filesys_lock);
+				f->R.rax = file_read(file, buffer, size);
+				lock_release(&filesys_lock);
+				// printf("[SYS_READ] file_read returned=%lld\n",
+				// 		(long long) f->R.rax);
+			}
+			/* fd == 0일때 키보드 입력을 받음 */
+			if (fd == 0) {
+			unsigned i;
+			for (i = 0; i < size; i++) {	
+				((uint8_t *) buffer)[i] = input_getc();
+				}
+				f->R.rax= i;
+				break;
+			}
+			break;
 		}
 		case SYS_CLOSE: {
 			int fd = (int) f->R.rdi;
