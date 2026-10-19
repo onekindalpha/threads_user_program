@@ -12,6 +12,7 @@ void syscall_entry (void);
 static void check_string (const char *str);
 void syscall_handler (struct intr_frame *);
 static void check_address (const void *addr);
+static void check_buffer(const void *buf, unsigned size);  // 추가!
 void sys_exit (int status);
 #include "threads/synch.h"
 #include "filesys/filesys.h"
