@@ -110,9 +110,14 @@ struct thread {
 	int nice;								/* [문서 B.1] 양보 정도 (-20~20, 정수). 클수록 priority가 낮아짐 */
 	struct list_elem allelem; /* all_list에 걸기 위한 고리, blocked 포함 전체 순회용 */
 
+	
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
+	int exit_status;
+	struct file **fd_table; /*fd테이블 및 fd번호 관리 필드*/ 
+	int next_fd;
+
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
@@ -142,7 +147,6 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
-
 struct thread *thread_current (void);
 tid_t thread_tid (void);
 const char *thread_name (void);

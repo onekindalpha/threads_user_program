@@ -12,7 +12,6 @@ void syscall_entry (void);
 static void check_string (const char *str);
 void syscall_handler (struct intr_frame *);
 static void check_address (const void *addr);
-static void check_buffer(const void *buf, unsigned size);  // 추가!
 void sys_exit (int status);
 #include "threads/synch.h"
 #include "filesys/filesys.h"
@@ -141,8 +140,6 @@ check_buffer (const void *buf, unsigned size) {
 	/* 버퍼가 걸치는 모든 페이지 검사 */
 	for (uintptr_t page = first_page; page <=last_page ; page += PGSIZE) {
 		check_address((void *) page);
-		if (page == last_page)
-			break;
 	}
 }
 
@@ -150,30 +147,13 @@ check_buffer (const void *buf, unsigned size) {
 void
 syscall_handler (struct intr_frame *f) {
 	switch (f->R.rax) { 
-		case SYS_WRITE: {
-			int fd = (int) f->R.rdi;
-			const void *buffer = (const void *) f->R.rsi;
-			unsigned size = (unsigned) f->R.rdx;
-			printf("SYS_WRITE: buffer=%p, size=%u\n", buffer, size);
-			check_buffer(buffer, size);
-			printf("SYS_WRITE: buffer validation passed\n");
-			/* fd =1이면 콘솔에 출력함. */
-			if (fd== 1) {
-				putbuf(buffer, size);
-				f->R.rax = size;
-			} else if (fd == 0) {
-				f->R.rax = -1;
-			} else {
-					struct file *file = fd_get(fd);
-					if (file == NULL) {
-						sys_exit(-1);
-					}
-					lock_acquire(&filesys_lock);
-					f->R.rax = file_write(file, buffer, size);
-					lock_release(&filesys_lock);
-			}
-		break;
-		}
+		case SYS_WRITE:
+		  // rdi:fd, rsi:buffer, rdx:size
+			/* fd가 1이면 putbuf(buffer, size), 반환값은 f->R.rax에*/
+			if (f->R.rdi == 1)
+				putbuf((const char *) f->R.rsi, (size_t) f->R.rdx);
+				f->R.rax = f->R.rdx;
+			break;
 		// exit관련 함수가. 
 		case SYS_EXIT: {
 			sys_exit ((int) f->R.rdi);
@@ -226,15 +206,16 @@ syscall_handler (struct intr_frame *f) {
 				f->R.rax = 0;
 				break;
 			}
-			/* fd가 1인경우 -1을 반환 -> 예외케이스 구현전에 다른 케이스를 분기해서 생각해봐야겠다. */
-			if (fd < 0 || fd == 1) {
+			/* fd가 1인경우 -1을 반환 */
+			if (fd < 0 || fd== 1) {
 				/* 아마 새기고 반환을 하는 것임. */
 				f->R.rax = -1;
 				break;
 			}
-			printf("[SYS_READ] before check_buffer\n");
+
+			// printf("[SYS_READ] before check_buffer\n");
     	check_buffer(buffer, size);
-    	printf("[SYS_READ] after check_buffer\n");
+    	// printf("[SYS_READ] after check_buffer\n");
 			/* 일반 파일이면 */
 			if (fd >=2) {
 				struct file *file = fd_get(fd);
