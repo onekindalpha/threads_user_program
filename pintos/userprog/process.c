@@ -34,7 +34,13 @@ static void __do_fork (void *);
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
-	struct thread *current = thread_current ();
+	struct thread *cur = thread_current ();
+	if (cur->fd_table == NULL) {
+		cur->fd_table = palloc_get_page(PAL_ZERO);
+		if (cur->fd_table == NULL) 
+			PANIC("fd_table allocation failed");
+		cur->next_fd = 2;
+	}
 }
 
 /* Starts the first userland program, called "initd", loaded from FILE_NAME.
@@ -56,7 +62,7 @@ process_create_initd (const char *file_name) {
 	char thread_name[16];
   char *save_ptr;
 	strlcpy (thread_name, file_name, sizeof thread_name);
-	char *name = strtok_r(thread_name ," ", &save_ptr);
+char *name = strtok_r(thread_name ," ", &save_ptr);
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)

@@ -609,6 +609,8 @@ init_thread (struct thread *t, const char *name, int priority) {
 	/* [구현] timer 인터럽트가 all_list를 순회하므로 인터럽트를 끄고 추가 */
 #ifdef USERPROG
 	t->exit_status =0;
+	t->fd_table = NULL;
+	t->next_fd = 2;
 #endif
 	t->magic = THREAD_MAGIC;
 	/* timer 인터럽트가 all_list를 순회하므로 인터럽트를 끄고 추가 */

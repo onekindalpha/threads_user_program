@@ -115,6 +115,9 @@ struct thread {
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
 	int exit_status;
+	struct file **fd_table; /*fd테이블 및 fd번호 관리 필드*/ 
+	int next_fd;
+
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
