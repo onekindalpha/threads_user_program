@@ -1,4 +1,5 @@
 #include "userprog/syscall.h"
+#include "devices/input.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
@@ -31,7 +32,7 @@ struct lock filesys_lock;
 #define MSR_STAR 0xc0000081         /* Segment selector msr */
 #define MSR_LSTAR 0xc0000082        /* Long mode SYSCALL target */
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
-#define FD_TABLE_SIZE (PGSIZE /sizeof(struct file *))
+#define FD_TABLE_SIZE ((int) (PGSIZE / sizeof (struct file *)))
 
 #define FD_MAX 512
 void
@@ -77,7 +78,7 @@ fd_get(int fd) {
 static void
 fd_remove(int fd) {
 	struct thread *cur = thread_current();
-	if (fd < 2 || fd >= FD_MAX)
+	if (fd < 2 || fd >= FD_TABLE_SIZE)
 		return;
 	cur->fd_table[fd] = NULL;
 }
@@ -96,7 +97,6 @@ static void
 check_address(const void *addr) {
 	/* 유저 포인터가 널이면*/
 	if (addr == NULL) {
-		printf("check_address: NULL\n");
 		sys_exit(-1);
 	}
 	/* 커널 주소이면 */
@@ -147,14 +147,88 @@ check_buffer (const void *buf, unsigned size) {
 void
 syscall_handler (struct intr_frame *f) {
 	switch (f->R.rax) { 
-		case SYS_WRITE:
-		  // rdi:fd, rsi:buffer, rdx:size
-			/* fd가 1이면 putbuf(buffer, size), 반환값은 f->R.rax에*/
-			if (f->R.rdi == 1)
-				putbuf((const char *) f->R.rsi, (size_t) f->R.rdx);
-				f->R.rax = f->R.rdx;
+		case SYS_WRITE: {
+		/* rdi: fd, rsi: buffer, rdx: size */
+		int fd = (int) f->R.rdi;
+		const void *buffer = (const void *) f->R.rsi;
+		unsigned size = (unsigned) f->R.rdx;
+		/* write-zero: 0바이트 쓰기는 0 반환 */
+		if (size == 0) {
+			f->R.rax = 0;
 			break;
+		}
+		/* write-bad-ptr: 버퍼가 유효하지 않으면 여기서 exit(-1) */
+		check_buffer(buffer, size);
+		/* stdout */
+		if (fd == 1) {
+			putbuf((const char *) buffer, (size_t) size);
+			f->R.rax = size;
+			break;
+		}
+		/* stdin(0)이나 음수 fd에는 쓸 수 없음 */
+		if (fd < 2) {
+			f->R.rax = -1;
+			break;
+		}
+		/* 일반 파일 */
+		struct file *file = fd_get(fd);
+		if (file == NULL) {          /* write-bad-fd */
+			f->R.rax = -1;
+			break;
+		}
+		lock_acquire(&filesys_lock);
+		f->R.rax = file_write(file, buffer, (off_t) size);
+		lock_release(&filesys_lock);
+		break;
+	}
 		// exit관련 함수가. 
+		case SYS_FILESIZE:
+		{
+			int fd = (int)f->R.rdi;
+			struct file *file = fd_get(fd);
+			/** @brief fd번호에 열린파일이 없을때 return값 -1 */
+			if (file == NULL)
+			{
+				f->R.rax = -1;
+				break;
+			}
+			lock_acquire(&filesys_lock);
+			off_t size = file_length(file);/** @brief file_length 내장함수를 활용해 전체 크기인 size값 반환 */
+			lock_release(&filesys_lock);
+			f->R.rax = size;
+			break;
+		}
+		case SYS_TELL:
+		{
+			int fd = (int)f->R.rdi;
+			struct file *file = fd_get(fd);
+			if (file == NULL)
+			{
+				f->R.rax = -1;
+				break;
+			}
+			lock_acquire(&filesys_lock);
+			off_t cur_pos = file_tell(file);/** @brief file_tell 내장함수를 활용해 현재위치값을 off-set으로 반환 */
+			lock_release(&filesys_lock);
+			f->R.rax = cur_pos;
+			break;
+		}
+		case SYS_SEEK:
+		{
+			int fd = (int)f->R.rdi;
+			unsigned position = (unsigned)f->R.rsi;
+			struct file *file = fd_get(fd);
+			if (file == NULL)
+			{
+				f->R.rax = -1;
+				break;
+			}
+			lock_acquire(&filesys_lock);
+			file_seek(file,(off_t)position);/** @brief file_seek 내장함수를 활용해 file구조체에 저장된 pos를 position으로 옮김 */
+			lock_release(&filesys_lock);
+			f->R.rax = position;
+			break;
+		}
 		case SYS_EXIT: {
 			sys_exit ((int) f->R.rdi);
 			break;
@@ -267,4 +341,3 @@ syscall_handler (struct intr_frame *f) {
 			thread_exit ();
  }
 }
-
