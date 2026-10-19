@@ -7,10 +7,18 @@
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
-
+#include "threads/init.h"
 void syscall_entry (void);
+static void check_string (const char *str);
 void syscall_handler (struct intr_frame *);
-
+static void check_address (const void *addr);
+void sys_exit (int status);
+#include "threads/synch.h"
+#include "filesys/filesys.h"
+#include "threads/vaddr.h"
+#include "threads/mmu.h"
+struct lock filesys_lock;
+#include "filesys/file.h"
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -23,7 +31,9 @@ void syscall_handler (struct intr_frame *);
 #define MSR_STAR 0xc0000081         /* Segment selector msr */
 #define MSR_LSTAR 0xc0000082        /* Long mode SYSCALL target */
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
+#define FD_TABLE_SIZE (PGSIZE /sizeof(struct file *))
 
+#define FD_MAX 512
 void
 syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
@@ -35,33 +45,157 @@ syscall_init (void) {
 	 * mode stack. Therefore, we masked the FLAG_FL. */
 	write_msr(MSR_SYSCALL_MASK,
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
+	// syscall_init에서 부팅시 초기화
+	lock_init(&filesys_lock);
 }
 
-/* The main system call interface */
-void
-syscall_handler (struct intr_frame *f UNUSED) 
-{
-	/// @brief 시스템콜 작동 모아놓은 함수 
-	/// @warning 유저프로그램에서 NULL이나 이상한 주소를 가리킬 수 있기 때문에 향후 안전검사 추가 필요함 만약 안전검사 통과 못할시 해당 프로세스 kill하는 절차가 필요함
-	switch (f->R.rax)
-	{
-	case SYS_WRITE: /** @brief 문자열 출력 */
-					/// @details 유저프로그램 write로부터 fd, buffer 주소, size 전달받은 후 실제 문자열 반환한다. 그리고 exit
-		{
-			if (f->R.rdi == 1)
-				putbuf((const char *)f->R.rsi, f->R.rdx);
-			f->R.rax = f->R.rdx;
-			break;
-		}
-
-	case SYS_EXIT: /** @brief 함수종료*/
-				   /// @details 스레드 네임에서 종료될 스레드의 이름을 변수에 저장후 화면에 출력 status는 userprogram에서 전달함
-		{
-			const char *name = thread_name();
-			int status = f->R.rdi;
-			printf("%s: exit(%d)\n", name, status);
-			thread_exit();
-			break;
+/* int fd를 반환하는 함수 */
+static int
+fd_add(struct file *file) {
+	struct thread *cur = thread_current();
+	for (int fd = 2; fd < FD_TABLE_SIZE; fd++) {
+		if (cur->fd_table[fd] == NULL) {
+				cur->fd_table[fd] = file;
+				return fd;
 		}
 	}
+	return -1;
 }
+
+/* 파일 포인터 반환하는 함수 */
+static struct file *
+fd_get(int fd) {
+	struct thread *cur = thread_current();
+	if (fd < 2 || fd >= FD_TABLE_SIZE || 
+		cur->fd_table[fd] == NULL) {
+		return NULL;
+	}
+	return cur->fd_table[fd];
+}
+
+/* 아무것도 반환하지 않는 함수 */
+static void
+fd_remove(int fd) {
+	struct thread *cur = thread_current();
+	if (fd < 2 || fd >= FD_MAX)
+		return;
+	cur->fd_table[fd] = NULL;
+}
+
+/* 종료 메시지 출력 및 thread_exit() 을 부름. */
+void
+sys_exit (int status) {
+	if (lock_held_by_current_thread(&filesys_lock))
+		lock_release(&filesys_lock);
+	thread_current()->exit_status = status;
+	printf("%s: exit(%d)\n", thread_current()->name, status);
+	thread_exit();
+}
+
+static void
+check_address(const void *addr) {
+	/* 유저 포인터가 널이면*/
+	if (addr == NULL)
+		sys_exit(-1);
+	/* 커널 주소이면 */
+	if (!is_user_vaddr(addr))
+		sys_exit(-1);
+	/* 매핑 되지 않았으면 */
+	if (pml4_get_page(thread_current()->pml4, addr) == NULL)
+		sys_exit(-1);
+}
+
+static void
+check_string(const char *str) {
+	while (true) {
+		check_address(str);
+		if (*str == '\0')
+			return;
+		str++;
+	}
+}
+
+// static void
+// check_buffer (const void *buf, unsigned size) {
+
+// }
+//power_off가 선언된 헤더(Threads/init.h)를 syscall.c에서 include하고 있음. 
+void
+syscall_handler (struct intr_frame *f) {
+	switch (f->R.rax) { 
+		case SYS_WRITE:
+		  // rdi:fd, rsi:buffer, rdx:size
+			/* fd가 1이면 putbuf(buffer, size), 반환값은 f->R.rax에*/
+			if (f->R.rdi == 1)
+				putbuf((const char *) f->R.rsi, (size_t) f->R.rdx);
+				f->R.rax = f->R.rdx;
+			break;
+		// exit관련 함수가. 
+		case SYS_EXIT: {
+			sys_exit ((int) f->R.rdi);
+			break;
+		 }
+		// create
+		case SYS_CREATE: {
+			/*rdi: 파일 이름 주소, rsi: 초기 크기 */
+			const char *file = (const char *) f->R.rdi;
+			unsigned initial_size = (unsigned) f->R.rsi;
+			/* 유저 포인터 검증 함수 */
+			check_string(file);	 
+			/* 락 잡기 */
+			lock_acquire(&filesys_lock);
+			/* filesys_create(이름, 크기 결과를 )*/
+			f-> R.rax = filesys_create(file, initial_size);
+			/* 락 풀기 */
+			lock_release(&filesys_lock);
+			break;
+		}
+		case SYS_OPEN: {
+			const char *name = (const char *) f->R.rdi;
+			check_string(name);
+			lock_acquire(&filesys_lock);
+			struct file *file = filesys_open(name);
+			
+			if (file == NULL) {
+				f->R.rax = -1;
+			} else {
+				int fd = fd_add(file);
+				if (fd == -1) {
+					file_close(file);
+					f->R.rax = -1;
+					} else {
+					f->R.rax = fd;
+				}
+		}
+		lock_release(&filesys_lock);
+		break;
+		}
+		case SYS_CLOSE: {
+			int fd = (int) f->R.rdi;
+			/* fd 테이블 조회 후 */
+			struct file *file = fd_get(fd);
+			if (file != NULL) {
+				lock_acquire(&filesys_lock);
+				file_close(file);
+				fd_remove(fd);
+				lock_release(&filesys_lock);
+			}
+		break;
+		}
+		case SYS_REMOVE: {
+			const char *name = (const char *) f->R.rdi;
+			check_string(name);
+			lock_acquire(&filesys_lock);
+			f->R.rax = filesys_remove(name);
+			lock_release(&filesys_lock);
+			break;
+		}
+		case SYS_HALT: {
+			power_off();
+			break;
+		}
+		 default:
+			thread_exit ();
+ }
+}
+
