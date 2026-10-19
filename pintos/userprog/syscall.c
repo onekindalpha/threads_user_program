@@ -251,54 +251,6 @@ syscall_handler (struct intr_frame *f) {
 			}
 		break;
 		}
-		/** @def filesize는 fd로 열린파일을 찾은 다음 핀토스 내장함수 file_length를 활용해 구한 size를 변수에 담은 후 return */
-		case SYS_FILESIZE:
-		{
-			int fd = (int)f->R.rdi;
-			struct file *file = fd_get(fd);
-			/** @brief fd번호에 열린파일이 없을때 return값 -1 */
-			if (file == NULL)
-			{
-				f->R.rax = -1;
-				break;
-			}
-			lock_acquire(&filesys_lock);
-			off_t size = file_length(file);/** @brief file_length 내장함수를 활용해 전체 크기인 size값 반환 */
-			lock_release(&filesys_lock);
-			f->R.rax = size;
-			break;
-		}
-		case SYS_TELL:
-		{
-			int fd = (int)f->R.rdi;
-			struct file *file = fd_get(fd);
-			if (file == NULL)
-			{
-				f->R.rax = -1;
-				break;
-			}
-			lock_acquire(&filesys_lock);
-			off_t cur_pos = file_tell(file);/** @brief file_tell 내장함수를 활용해 현재위치값을 off-set으로 반환 */
-			lock_release(&filesys_lock);
-			f->R.rax = cur_pos;
-			break;
-		}
-		case SYS_SEEK:
-		{
-			int fd = (int)f->R.rdi;
-			unsigned position = (unsigned)f->R.rsi;
-			struct file *file = fd_get(fd);
-			if (file == NULL)
-			{
-				f->R.rax = -1;
-				break;
-			}
-			lock_acquire(&filesys_lock);
-			file_seek(file,(off_t)position);/** @brief file_seek 내장함수를 활용해 file구조체에 저장된 pos를 position으로 옮김 */
-			lock_release(&filesys_lock);
-			f->R.rax = position;
-			break;
-		}
 		case SYS_REMOVE: {
 			const char *name = (const char *) f->R.rdi;
 			check_string(name);
