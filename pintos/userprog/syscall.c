@@ -9,15 +9,16 @@
 #include "intrinsic.h"
 #include "threads/init.h"
 void syscall_entry (void);
+static void check_string (const char *str);
 void syscall_handler (struct intr_frame *);
 static void check_address (const void *addr);
-static void sys_exit (int status);
+void sys_exit (int status);
 #include "threads/synch.h"
 #include "filesys/filesys.h"
 #include "threads/vaddr.h"
 #include "threads/mmu.h"
-static struct lock filesys_lock;
-
+struct lock filesys_lock;
+#include "filesys/file.h"
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -30,7 +31,9 @@ static struct lock filesys_lock;
 #define MSR_STAR 0xc0000081         /* Segment selector msr */
 #define MSR_LSTAR 0xc0000082        /* Long mode SYSCALL target */
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
+#define FD_TABLE_SIZE (PGSIZE /sizeof(struct file *))
 
+#define FD_MAX 512
 void
 syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
@@ -46,12 +49,49 @@ syscall_init (void) {
 	lock_init(&filesys_lock);
 }
 
-/* 종료 메시지 출력 및 thread_exit() 을 부름. */
+/* int fd를 반환하는 함수 */
+static int
+fd_add(struct file *file) {
+	struct thread *cur = thread_current();
+	for (int fd = 2; fd < FD_TABLE_SIZE; fd++) {
+		if (cur->fd_table[fd] == NULL) {
+				cur->fd_table[fd] = file;
+				return fd;
+		}
+	}
+	return -1;
+}
+
+/* 파일 포인터 반환하는 함수 */
+static struct file *
+fd_get(int fd) {
+	struct thread *cur = thread_current();
+	if (fd < 2 || fd >= FD_TABLE_SIZE || 
+		cur->fd_table[fd] == NULL) {
+		return NULL;
+	}
+	return cur->fd_table[fd];
+}
+
+/* 아무것도 반환하지 않는 함수 */
 static void
+fd_remove(int fd) {
+	struct thread *cur = thread_current();
+	if (fd < 2 || fd >= FD_MAX)
+		return;
+	cur->fd_table[fd] = NULL;
+}
+
+/* 종료 메시지 출력 및 thread_exit() 을 부름. */
+void
 sys_exit (int status) {
+	if (lock_held_by_current_thread(&filesys_lock))
+		lock_release(&filesys_lock);
+	thread_current()->exit_status = status;
 	printf("%s: exit(%d)\n", thread_current()->name, status);
 	thread_exit();
 }
+
 static void
 check_address(const void *addr) {
 	/* 유저 포인터가 널이면*/
@@ -64,6 +104,21 @@ check_address(const void *addr) {
 	if (pml4_get_page(thread_current()->pml4, addr) == NULL)
 		sys_exit(-1);
 }
+
+static void
+check_string(const char *str) {
+	while (true) {
+		check_address(str);
+		if (*str == '\0')
+			return;
+		str++;
+	}
+}
+
+// static void
+// check_buffer (const void *buf, unsigned size) {
+
+// }
 //power_off가 선언된 헤더(Threads/init.h)를 syscall.c에서 include하고 있음. 
 void
 syscall_handler (struct intr_frame *f) {
@@ -86,7 +141,7 @@ syscall_handler (struct intr_frame *f) {
 			const char *file = (const char *) f->R.rdi;
 			unsigned initial_size = (unsigned) f->R.rsi;
 			/* 유저 포인터 검증 함수 */
-			check_address(file);	 
+			check_string(file);	 
 			/* 락 잡기 */
 			lock_acquire(&filesys_lock);
 			/* filesys_create(이름, 크기 결과를 )*/
@@ -95,15 +150,43 @@ syscall_handler (struct intr_frame *f) {
 			lock_release(&filesys_lock);
 			break;
 		}
-		// case SYS_OPEN: {
-		// 	/* rdi: 파일 이름 주소 */
-		// 	const char *file = (const char *) f->R.rdi;
-		// }
-		case SYS_REMOVE: {
-			const char *file = (const char *) f->R.rdi;
-			check_address(file);
+		case SYS_OPEN: {
+			const char *name = (const char *) f->R.rdi;
+			check_string(name);
 			lock_acquire(&filesys_lock);
-			f->R.rax = filesys_remove(file);
+			struct file *file = filesys_open(name);
+			
+			if (file == NULL) {
+				f->R.rax = -1;
+			} else {
+				int fd = fd_add(file);
+				if (fd == -1) {
+					file_close(file);
+					f->R.rax = -1;
+					} else {
+					f->R.rax = fd;
+				}
+		}
+		lock_release(&filesys_lock);
+		break;
+		}
+		case SYS_CLOSE: {
+			int fd = (int) f->R.rdi;
+			/* fd 테이블 조회 후 */
+			struct file *file = fd_get(fd);
+			if (file != NULL) {
+				lock_acquire(&filesys_lock);
+				file_close(file);
+				fd_remove(fd);
+				lock_release(&filesys_lock);
+			}
+		break;
+		}
+		case SYS_REMOVE: {
+			const char *name = (const char *) f->R.rdi;
+			check_string(name);
+			lock_acquire(&filesys_lock);
+			f->R.rax = filesys_remove(name);
 			lock_release(&filesys_lock);
 			break;
 		}
