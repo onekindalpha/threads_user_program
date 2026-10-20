@@ -55,7 +55,7 @@ syscall_init (void) {
 static int
 fd_add(struct file *file) {
 	struct thread *cur = thread_current();
-
+	/* 추후에 그것을 해제를 꼭 해줘야 함 */
 	struct fd_entry *new_entry = malloc(sizeof(struct fd_entry));
 	if (new_entry == NULL)
 		return -1;

@@ -619,7 +619,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	sema_init(&t->exit_sema, 0);
 	t->fork_failed = false;
 	t->is_process = false;
-	/* 여기에 리스트와 세마포어 초기화해야 하마. */
+	t->running_file = NULL;
 #endif
 	t->magic = THREAD_MAGIC;
 	/* timer 인터럽트가 all_list를 순회하므로 인터럽s를 끄고 추가 */

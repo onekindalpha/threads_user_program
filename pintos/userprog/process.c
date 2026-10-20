@@ -179,10 +179,10 @@ __do_fork (void *aux) {
 	current->pml4 = pml4_create();
 	if (current->pml4 == NULL)
 		goto error;
-	/* 컨텍스트 스위칭을 위해서 CPU를 러닝하도록 한다. 
-	다음 스레드 안에서 유저 코드를 러닝하도록 한다. 
-	그리고 스러ㅔ드의 페이지 테이블을 활성화하고, 커널 스택을 설정한다. 
-	그리고 페이지 디렉토리 pd를 베이스 lcr3 레지스터에 로드하는 것까지 한다. */
+	/* 방금 만든 자식의 페이지 테이블을 CPU가 쓰게 하고(CR3에 로드),
+	   인터럽트·시스템 콜 때 쓸 커널 스택을 자식 것으로 맞춤(TSS rsp0).
+	   do_iret으로 유저 모드에 들어가기 전에 주소 공간과 커널 스택이
+	   모두 자식 것이어야 함 */
 	process_activate (current);
 
 #ifdef VM
@@ -219,6 +219,15 @@ __do_fork (void *aux) {
 				ce->fd = pe->fd;
 				list_push_back(&current->fd_list, &ce->elem);
 			}
+	/* rox: 자식도 같은 실행 파일을 실행하므로 부모의 Running file을 복제함 
+	file_duplicate는 deny_write 상태도 복사하므로 자식 쪽에도 쓰기가 막힘 */
+	if (parent->running_file !=NULL) {
+			lock_acquire(&filesys_lock);
+			current->running_file = file_duplicate(parent->running_file);
+			lock_release(&filesys_lock);
+			if (current->running_file == NULL)
+				goto error;
+	}
 	process_init ();
 	/* 복제가 다 끝났으니 부모를 깨움 (부모는 process_fork에서 기다리는 중)*/
 	sema_up(&current->fork_sema);
@@ -339,28 +348,56 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	/* main이 꺼지지 않도록 함. */
-	timer_sleep(100);
-	return -1;
+	struct thread *child = get_child(child_tid);
+	if (child == NULL)
+		return -1;
+	sema_down(&child->wait_sema);
+	int status = child->exit_status;
+	list_remove(&child->child_elem);
+	sema_up(&child->exit_sema);
+	return status;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
 void
 process_exit (void) {
 	struct thread *curr = thread_current ();
-	/* TODO: Your code goes here.
-	 * TODO: Implement process termination message (see
-	 * TODO: project2/process_termination.html).
-	 * TODO: We recommend you to implement process resource cleanup here. */
+
+	while (!list_empty (&curr->fd_list)) {
+		struct fd_entry *e = list_entry (list_pop_front (&curr->fd_list),
+		                                 struct fd_entry, elem);
+		lock_acquire (&filesys_lock);
+		file_close (e->file);
+		lock_release (&filesys_lock);
+		free (e);
+	}
+
+	while (!list_empty (&curr->child_list)) {
+		struct thread *c = list_entry (list_pop_front (&curr->child_list),
+		                               struct thread, child_elem);
+		c->parent = NULL;
+		sema_up (&c->exit_sema);
+	}
 
 	process_cleanup ();
+
+	if (curr->is_process && curr->parent != NULL) {
+		sema_up (&curr->wait_sema);
+		sema_down (&curr->exit_sema);
+	}
 }
 
 /* Free the current process's resources. */
 static void
 process_cleanup (void) {
 	struct thread *curr = thread_current ();
-
+	/* rox: 실행 파일을 닫음. File_close가 쓰기 금지를 자동으로 풀어 줌*/
+	if (curr->running_file !=NULL) {
+		lock_acquire(&filesys_lock);
+		file_close(curr->running_file);
+		lock_release(&filesys_lock);
+		curr->running_file = NULL;
+	}
 #ifdef VM
 	supplemental_page_table_kill (&curr->spt);
 #endif
@@ -477,7 +514,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
-
+	file_deny_write(file);
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
@@ -551,13 +588,16 @@ load (const char *file_name, struct intr_frame *if_) {
 	if_->rip = ehdr.e_entry;
 
 	/* TODO: Your code goes here.
-	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
+	 * TODO: Implement argument passing (see project2/argument_passing.html).*/
 	success = true;
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
+	if (success)
+	
+		t->running_file = file;
+	else
+		file_close (file);
 	return success;
 }
 
@@ -661,7 +701,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 			palloc_free_page (kpage);
 			return false;
 		}
-
+		
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
