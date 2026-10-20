@@ -390,7 +390,10 @@ syscall_handler (struct intr_frame *f) {
 			sys_exit (-1);
 			break;
 		}
-		case SYS_WAIT: {
+		case SYS_WAIT:
+		{
+			tid_t pid = (tid_t)f->R.rdi;
+			f->R.rax = process_wait(pid);
 			break;
 		}
 		 default:
