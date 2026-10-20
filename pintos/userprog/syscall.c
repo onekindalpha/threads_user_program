@@ -20,6 +20,7 @@ void sys_exit (int status);
 #include "threads/mmu.h"
 struct lock filesys_lock;
 #include "filesys/file.h"
+#include "threads/malloc.h"
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -54,33 +55,60 @@ syscall_init (void) {
 static int
 fd_add(struct file *file) {
 	struct thread *cur = thread_current();
-	for (int fd = 2; fd < FD_TABLE_SIZE; fd++) {
-		if (cur->fd_table[fd] == NULL) {
-				cur->fd_table[fd] = file;
-				return fd;
-		}
+	
+	struct fd_entry *new_entry = malloc(sizeof(struct fd_entry));
+	if (new_entry == NULL)
+		return -1;
+
+	int expected = 2;
+	struct list_elem *e;
+	for (e = list_begin(&cur->fd_list);
+	     e != list_end(&cur->fd_list);
+	     e = list_next(e)) {
+		struct fd_entry *entry = list_entry(e, struct fd_entry, elem);
+		if (entry->fd != expected)
+			break;
+		expected++;
 	}
-	return -1;
+	new_entry->fd = expected;
+	new_entry->file = file;
+	list_insert(e, &new_entry->elem);
+	return expected;
 }
 
 /* 파일 포인터 반환하는 함수 */
 static struct file *
 fd_get(int fd) {
 	struct thread *cur = thread_current();
-	if (fd < 2 || fd >= FD_TABLE_SIZE || 
-		cur->fd_table[fd] == NULL) {
+	if (fd < 2)
 		return NULL;
+
+	for (struct list_elem *e = list_begin(&cur->fd_list);
+	     e != list_end(&cur->fd_list);
+	     e = list_next(e)) {
+		struct fd_entry *entry = list_entry(e, struct fd_entry, elem);
+		if (entry->fd == fd)
+			/* 찾은 노드에 저장된 파일 포인터를 돌려준다. */
+			return entry->file;
 	}
-	return cur->fd_table[fd];
+	return NULL;
 }
 
 /* 아무것도 반환하지 않는 함수 */
 static void
 fd_remove(int fd) {
 	struct thread *cur = thread_current();
-	if (fd < 2 || fd >= FD_TABLE_SIZE)
-		return;
-	cur->fd_table[fd] = NULL;
+
+	for (struct list_elem *e = list_begin(&cur->fd_list);
+	     e != list_end(&cur->fd_list);
+	     e = list_next(e)) {
+		struct fd_entry *entry = list_entry(e, struct fd_entry, elem);
+		if (entry->fd == fd) {
+			list_remove(&entry->elem);
+			free(entry);
+			return;
+		}
+	}
 }
 
 /* 종료 메시지 출력 및 thread_exit() 을 부름. */
@@ -336,6 +364,9 @@ syscall_handler (struct intr_frame *f) {
 		case SYS_HALT: {
 			power_off();
 			break;
+		}
+		case SYS_FORK: {
+			
 		}
 		 default:
 			thread_exit ();
