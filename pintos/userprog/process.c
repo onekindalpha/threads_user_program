@@ -347,15 +347,26 @@ argument_stack (char **argv, int argc, struct intr_frame *if_) {
 	}
 
 /* Exit the process. This function is called by thread_exit (). */
-void
-process_exit (void) {
-	struct thread *curr = thread_current ();
-	while(!list_empty(&curr -> fd_list))
+	void
+	process_exit(void)
 	{
-		struct list_elem *e = list_pop_front(&curr->)
+		struct thread *curr = thread_current();
+		while (!list_empty(&curr->fd_list))
+		{
+			struct list_elem *e = list_pop_front(&curr->fd_list);
+			struct fd_entry *entry = list_entry(e, struct fd_entry, elem);
+			lock_acquire(&filesys_lock);
+			file_close(entry->file);
+			lock_release(&filesys_lock);
+			free(entry);
+		}
+		process_cleanup();
+		if (curr->is_process && curr->parent != NULL)
+		{
+			sema_up(&curr->wait_sema);
+			sema_down(&curr->exit_sema);
+		}
 	}
-	process_cleanup ();
-}
 
 /* Free the current process's resources. */
 static void
