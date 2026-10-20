@@ -88,7 +88,7 @@ kill (struct intr_frame *f) {
 			printf ("%s: dying due to interrupt %#04llx (%s).\n",
 					thread_name (), f->vec_no, intr_name (f->vec_no));
 			intr_dump_frame (f);
-			thread_exit ();
+			sys_exit (-1);
 
 		case SEL_KCSEG:
 			/* Kernel's code segment, which indicates a kernel bug.
@@ -141,7 +141,7 @@ page_fault (struct intr_frame *f) {
 	not_present = (f->error_code & PF_P) == 0;
 	write = (f->error_code & PF_W) != 0;
 	user = (f->error_code & PF_U) != 0;
-	sys_exit(-1);
+
 #ifdef VM
 	/* For project 3 and later. */
 	if (vm_try_handle_fault (f, fault_addr, user, write, not_present))
@@ -149,7 +149,8 @@ page_fault (struct intr_frame *f) {
 #endif
 	/* Count page faults. */
 	page_fault_cnt++;
-
+	/* 페이지 폴트: 잘못된 주소 접근 시 커널을 죽이지 않고 해당 프로세스만 exit(-1)을 함. */
+	sys_exit(-1);
 	/* If the fault is true fault, show info and exit. */
 	printf ("Page fault at %p: %s error %s page in %s context.\n",
 			fault_addr,

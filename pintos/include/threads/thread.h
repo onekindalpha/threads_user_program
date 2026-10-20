@@ -133,6 +133,7 @@ struct thread {
 	struct intr_frame parent_if;
 	bool fork_failed;
 	bool is_process;
+	struct file *running_file;
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
