@@ -1,5 +1,8 @@
 #include "userprog/syscall.h"
 #include "devices/input.h"
+#include <string.h>              
+#include "threads/palloc.h"      
+#include "userprog/process.h"    
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
@@ -335,6 +338,17 @@ syscall_handler (struct intr_frame *f) {
 		}
 		case SYS_HALT: {
 			power_off();
+			break;
+		}
+		case SYS_EXEC:
+		{
+			const char *cmd_line = (const char *)f->R.rdi;
+			check_string(cmd_line);
+			void *exec_pagetable = palloc_get_page(0);
+			size_t exec_len = strlen(cmd_line);
+			strlcpy(exec_pagetable, cmd_line, PGSIZE);
+			process_exec(exec_pagetable);
+			sys_exit(-1);
 			break;
 		}
 		 default:
