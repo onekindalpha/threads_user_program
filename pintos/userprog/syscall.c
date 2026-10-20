@@ -55,7 +55,7 @@ syscall_init (void) {
 static int
 fd_add(struct file *file) {
 	struct thread *cur = thread_current();
-	
+
 	struct fd_entry *new_entry = malloc(sizeof(struct fd_entry));
 	if (new_entry == NULL)
 		return -1;
@@ -366,7 +366,14 @@ syscall_handler (struct intr_frame *f) {
 			break;
 		}
 		case SYS_FORK: {
-			
+			/* fork를 부른 부모가 실행하는 코드 */	
+			const char *thread_name = (const char *) f->R.rdi;			
+			/* 첫번째 인자(자식이름) */
+			check_string(thread_name);
+			/* 이름이 걸친 페이지를 전부 검사함 */
+			f->R.rax = process_fork(thread_name, f);
+			/* 자식 tid 또는 TID_ERROR */
+			break;
 		}
 		 default:
 			thread_exit ();

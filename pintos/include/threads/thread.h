@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -30,7 +31,7 @@ typedef int tid_t;
 #define NICE_MIN -20                   /* [문서 B.1] nice 범위 -20~20 */
 #define NICE_MAX 20
 
-/* 열린 파일 하나를 나타내는 fd 리스트 노드 */
+/* 열린 파일 하나를 나타내는 노드 */
 struct file;
 struct fd_entry {
 	int fd;                     /* fd 번호 (2 이상) */
@@ -126,6 +127,12 @@ struct thread {
 	struct thread *parent;              /* 나를 만든 부모 (한 명) */
 	struct list child_list;             /* 내가 만든 자식들 목록 (여러 명) */
 	struct list_elem child_elem;        /* 내가 부모의 child_list에 들어갈 때 쓰는 고리 */
+	struct semaphore fork_sema;
+	struct semaphore wait_sema;
+	struct semaphore exit_sema;
+	struct intr_frame parent_if;
+	bool fork_failed;
+	bool is_process;
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
@@ -134,6 +141,7 @@ struct thread {
 
 	/* Owned by thread.c. */
 	struct intr_frame tf;               /* Information for switching */
+	/* 여기에 넣는 게 맞는것인지 헷갈림. */
 	unsigned magic;                     /* Detects stack overflow. */
 };
 
