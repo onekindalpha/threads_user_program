@@ -1,8 +1,8 @@
 #include "userprog/syscall.h"
+#include <string.h>
+#include "threads/palloc.h"
+#include "userprog/process.h"
 #include "devices/input.h"
-#include <string.h>              
-#include "threads/palloc.h"      
-#include "userprog/process.h"    
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
@@ -23,6 +23,7 @@ void sys_exit (int status);
 #include "threads/mmu.h"
 struct lock filesys_lock;
 #include "filesys/file.h"
+#include "threads/malloc.h"
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -57,33 +58,60 @@ syscall_init (void) {
 static int
 fd_add(struct file *file) {
 	struct thread *cur = thread_current();
-	for (int fd = 2; fd < FD_TABLE_SIZE; fd++) {
-		if (cur->fd_table[fd] == NULL) {
-				cur->fd_table[fd] = file;
-				return fd;
-		}
+
+	struct fd_entry *new_entry = malloc(sizeof(struct fd_entry));
+	if (new_entry == NULL)
+		return -1;
+
+	int expected = 2;
+	struct list_elem *e;
+	for (e = list_begin(&cur->fd_list);
+	     e != list_end(&cur->fd_list);
+	     e = list_next(e)) {
+		struct fd_entry *entry = list_entry(e, struct fd_entry, elem);
+		if (entry->fd != expected)
+			break;
+		expected++;
 	}
-	return -1;
+	new_entry->fd = expected;
+	new_entry->file = file;
+	list_insert(e, &new_entry->elem);
+	return expected;
 }
 
 /* 파일 포인터 반환하는 함수 */
 static struct file *
 fd_get(int fd) {
 	struct thread *cur = thread_current();
-	if (fd < 2 || fd >= FD_TABLE_SIZE || 
-		cur->fd_table[fd] == NULL) {
+	if (fd < 2)
 		return NULL;
+
+	for (struct list_elem *e = list_begin(&cur->fd_list);
+	     e != list_end(&cur->fd_list);
+	     e = list_next(e)) {
+		struct fd_entry *entry = list_entry(e, struct fd_entry, elem);
+		if (entry->fd == fd)
+			/* 찾은 노드에 저장된 파일 포인터를 돌려준다. */
+			return entry->file;
 	}
-	return cur->fd_table[fd];
+	return NULL;
 }
 
 /* 아무것도 반환하지 않는 함수 */
 static void
 fd_remove(int fd) {
 	struct thread *cur = thread_current();
-	if (fd < 2 || fd >= FD_TABLE_SIZE)
-		return;
-	cur->fd_table[fd] = NULL;
+
+	for (struct list_elem *e = list_begin(&cur->fd_list);
+	     e != list_end(&cur->fd_list);
+	     e = list_next(e)) {
+		struct fd_entry *entry = list_entry(e, struct fd_entry, elem);
+		if (entry->fd == fd) {
+			list_remove(&entry->elem);
+			free(entry);
+			return;
+		}
+	}
 }
 
 /* 종료 메시지 출력 및 thread_exit() 을 부름. */
@@ -340,15 +368,29 @@ syscall_handler (struct intr_frame *f) {
 			power_off();
 			break;
 		}
-		case SYS_EXEC:
-		{
-			const char *cmd_line = (const char *)f->R.rdi;
-			check_string(cmd_line);
-			void *exec_pagetable = palloc_get_page(0);
-			size_t exec_len = strlen(cmd_line);
-			strlcpy(exec_pagetable, cmd_line, PGSIZE);
-			process_exec(exec_pagetable);
-			sys_exit(-1);
+		case SYS_FORK: {
+			/* fork를 부른 부모가 실행하는 코드 */	
+			const char *thread_name = (const char *) f->R.rdi;			
+			/* 첫번째 인자(자식이름) */
+			check_string(thread_name);
+			/* 이름이 걸친 페이지를 전부 검사함 */
+			f->R.rax = process_fork(thread_name, f);
+			/* 자식 tid 또는 TID_ERROR */
+			break;
+		}
+		/** @def 현재 실행중인 프로세스를 다른 프로세스로 교체*/
+		case SYS_EXEC: {
+			const char *cmd_line = (const char *) f->R.rdi;
+			check_string (cmd_line);
+			char *cmd_copy = palloc_get_page (0);
+			if (cmd_copy == NULL)
+				sys_exit (-1);
+			strlcpy (cmd_copy, cmd_line, PGSIZE);
+			process_exec (cmd_copy);
+			sys_exit (-1);
+			break;
+		}
+		case SYS_WAIT: {
 			break;
 		}
 		 default:
