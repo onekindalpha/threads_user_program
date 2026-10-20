@@ -334,25 +334,26 @@ argument_stack (char **argv, int argc, struct intr_frame *if_) {
  *
  * This function will be implemented in problem 2-2.  For now, it
  * does nothing. */
-int
-process_wait (tid_t child_tid UNUSED) {
-	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
-	 * XXX:       to add infinite loop here before
-	 * XXX:       implementing the process_wait. */
-	/* main이 꺼지지 않도록 함. */
-	timer_sleep(100);
-	return -1;
-}
+	int process_wait(tid_t tid)
+	{
+		struct thread *child = get_child(tid);
+		if (child == NULL)
+			return -1;
+		sema_down(&child->wait_sema);
+		int status = child->exit_status;
+		list_remove(&child->child_elem);
+		sema_up(&child->exit_sema);
+		return status;
+	}
 
 /* Exit the process. This function is called by thread_exit (). */
 void
 process_exit (void) {
 	struct thread *curr = thread_current ();
-	/* TODO: Your code goes here.
-	 * TODO: Implement process termination message (see
-	 * TODO: project2/process_termination.html).
-	 * TODO: We recommend you to implement process resource cleanup here. */
-
+	while(!list_empty(&curr -> fd_list))
+	{
+		struct list_elem *e = list_pop_front(&curr->)
+	}
 	process_cleanup ();
 }
 

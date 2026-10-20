@@ -1,4 +1,7 @@
 #include "userprog/syscall.h"
+#include <string.h>
+#include "threads/palloc.h"
+#include "userprog/process.h"
 #include "devices/input.h"
 #include <stdio.h>
 #include <syscall-nr.h>
@@ -373,6 +376,24 @@ syscall_handler (struct intr_frame *f) {
 			/* 이름이 걸친 페이지를 전부 검사함 */
 			f->R.rax = process_fork(thread_name, f);
 			/* 자식 tid 또는 TID_ERROR */
+			break;
+		}
+		/** @def 현재 실행중인 프로세스를 다른 프로세스로 교체*/
+		case SYS_EXEC: {
+			const char *cmd_line = (const char *) f->R.rdi;
+			check_string (cmd_line);
+			char *cmd_copy = palloc_get_page (0);
+			if (cmd_copy == NULL)
+				sys_exit (-1);
+			strlcpy (cmd_copy, cmd_line, PGSIZE);
+			process_exec (cmd_copy);
+			sys_exit (-1);
+			break;
+		}
+		case SYS_WAIT:
+		{
+			tid_t pid = (tid_t)f->R.rdi;
+			f->R.rax = process_wait(pid);
 			break;
 		}
 		 default:
