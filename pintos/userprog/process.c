@@ -18,6 +18,7 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "devices/timer.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -34,13 +35,6 @@ static void __do_fork (void *);
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
-	struct thread *cur = thread_current ();
-	if (cur->fd_table == NULL) {
-		cur->fd_table = palloc_get_page(PAL_ZERO);
-		if (cur->fd_table == NULL) 
-			PANIC("fd_table allocation failed");
-		cur->next_fd = 2;
-	}
 }
 
 /* Starts the first userland program, called "initd", loaded from FILE_NAME.

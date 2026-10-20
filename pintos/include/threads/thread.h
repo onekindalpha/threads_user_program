@@ -30,6 +30,14 @@ typedef int tid_t;
 #define NICE_MIN -20                   /* [문서 B.1] nice 범위 -20~20 */
 #define NICE_MAX 20
 
+/* 열린 파일 하나를 나타내는 fd 리스트 노드 */
+struct file;
+struct fd_entry {
+	int fd;                     /* fd 번호 (2 이상) */
+	struct file *file;          /* 열린 파일 객체 */
+	struct list_elem elem;      /* thread의 fd_list에 연결하는 고리 */
+};
+
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -110,14 +118,14 @@ struct thread {
 	int nice;								/* [문서 B.1] 양보 정도 (-20~20, 정수). 클수록 priority가 낮아짐 */
 	struct list_elem allelem; /* all_list에 걸기 위한 고리, blocked 포함 전체 순회용 */
 
-	
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
 	int exit_status;
-	struct file **fd_table; /*fd테이블 및 fd번호 관리 필드*/ 
-	int next_fd;
-
+	struct list fd_list;                /* 열린 파일 목록 (fd_entry들) */
+	struct thread *parent;              /* 나를 만든 부모 (한 명) */
+	struct list child_list;             /* 내가 만든 자식들 목록 (여러 명) */
+	struct list_elem child_elem;        /* 내가 부모의 child_list에 들어갈 때 쓰는 고리 */
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */

@@ -488,9 +488,10 @@ void cal_recent_cpu(void)
 	struct list_elem *e;
 	for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
 		struct thread *t = list_entry(e, struct thread, allelem);
-		if (t == idle_thread)
+		if (t == idle_thread) {
 			continue;
 		t->recent_cpu = fp_add_int(fp_mul(coef, t->recent_cpu), t->nice);
+		}
 	}
 }
 
@@ -609,11 +610,12 @@ init_thread (struct thread *t, const char *name, int priority) {
 	/* [구현] timer 인터럽트가 all_list를 순회하므로 인터럽트를 끄고 추가 */
 #ifdef USERPROG
 	t->exit_status =0;
-	t->fd_table = NULL;
-	t->next_fd = 2;
+	list_init(&t->fd_list);
+	t->parent = NULL;
+	list_init(&t->child_list);
 #endif
 	t->magic = THREAD_MAGIC;
-	/* timer 인터럽트가 all_list를 순회하므로 인터럽트를 끄고 추가 */
+	/* timer 인터럽트가 all_list를 순회하므로 인터럽s를 끄고 추가 */
 	enum intr_level old_level = intr_disable();
 	list_push_back (&all_list, &t->allelem);
 	intr_set_level(old_level);
