@@ -45,6 +45,7 @@ check_intr:
 no_sti:
 	movabs $syscall_handler, %r12
 	call *%r12
+	cli                    /* block interrupts until sysretq */
 	popq %r15
 	popq %r14
 	popq %r13

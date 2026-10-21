@@ -239,7 +239,6 @@ thread_create (const char *name, int priority,
 	if (thread_mlfqs && function != idle)
 		cal_priority(t);
 	tid = t->tid = allocate_tid ();
-
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
 	t->tf.rip = (uintptr_t) kernel_thread;
@@ -250,7 +249,9 @@ thread_create (const char *name, int priority,
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
-
+	/* 근데 여기에서 왜 빨간줄이 뜨지? */
+	t->parent = thread_current();
+	list_push_back(&thread_current()->child_list, &t->child_elem);
 	/* Add to run queue. */
 	thread_unblock (t);
 
@@ -488,9 +489,10 @@ void cal_recent_cpu(void)
 	struct list_elem *e;
 	for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
 		struct thread *t = list_entry(e, struct thread, allelem);
-		if (t == idle_thread)
+		if (t == idle_thread) {
 			continue;
 		t->recent_cpu = fp_add_int(fp_mul(coef, t->recent_cpu), t->nice);
+		}
 	}
 }
 
@@ -607,8 +609,20 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->nice = 0;   /* [문서 B.1] 첫 스레드의 nice는 0 (나머지는 thread_create에서 부모값으로 덮어씀) */
 	t->recent_cpu = 0; /* [문서 B.3] 첫 스레드의 recent_cpu는 0 */
 	/* [구현] timer 인터럽트가 all_list를 순회하므로 인터럽트를 끄고 추가 */
+#ifdef USERPROG
+	t->exit_status =0;
+	list_init(&t->fd_list);
+	t->parent = NULL;
+	list_init(&t->child_list);
+	sema_init(&t->fork_sema, 0);
+	sema_init(&t->wait_sema, 0);
+	sema_init(&t->exit_sema, 0);
+	t->fork_failed = false;
+	t->is_process = false;
+	t->running_file = NULL;
+#endif
 	t->magic = THREAD_MAGIC;
-	/* timer 인터럽트가 all_list를 순회하므로 인터럽트를 끄고 추가 */
+	/* timer 인터럽트가 all_list를 순회하므로 인터럽s를 끄고 추가 */
 	enum intr_level old_level = intr_disable();
 	list_push_back (&all_list, &t->allelem);
 	intr_set_level(old_level);
