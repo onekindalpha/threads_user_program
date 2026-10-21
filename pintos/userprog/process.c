@@ -240,6 +240,7 @@ error:
 	/* 실패: 부모가 알 수 있게 -1을 남기고, 반드시 깨운 뒤 종료*/
 	current->exit_status = -1;
 	current->fork_failed = true;
+	current->is_process = true;   /* fork 실패해도 부모가 수거할 때까지 기다리게 */
 	sema_up(&current->fork_sema);
 	thread_exit ();
 }
