@@ -380,7 +380,6 @@ process_exit (void) {
 	}
 
 	process_cleanup ();
-
 	if (curr->is_process && curr->parent != NULL) {
 		sema_up (&curr->wait_sema);
 		sema_down (&curr->exit_sema);
@@ -503,11 +502,11 @@ load (const char *file_name, struct intr_frame *if_) {
 	int i;
 
 	/* Allocate and activate page directory. */
+	lock_acquire(&filesys_lock);
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
 		goto done;
 	process_activate (thread_current ());
-
 	/* Open executable file. */
 	file = filesys_open (file_name);
 	if (file == NULL) {
@@ -598,6 +597,7 @@ done:
 		t->running_file = file;
 	else
 		file_close (file);
+	lock_release(&filesys_lock);
 	return success;
 }
 
