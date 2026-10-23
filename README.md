@@ -1,7 +1,3 @@
-cd /workspaces/threads_user_program
-git checkout master && git pull
-
-cat > /tmp/head.md <<'EOF'
 # KAIST Pintos (x86-64) · Krafton Jungle SW-AI Lab 13기
 
 | 프로젝트 | 기간 | 팀 | 결과 |
@@ -45,6 +41,7 @@ cat > /tmp/head.md <<'EOF'
 
 **진행 방식**: 기능마다 테스트 분석·설계 1시간 + 구현 1시간 페어 세션, TC 분석·설계 표와 트러블슈팅 기록 표로 문서화
 
+-----
 
 # 📘 Docker기반 Pintos 개발 환경 구축 가이드 
 
