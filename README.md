@@ -1,3 +1,56 @@
+# KAIST Pintos (x86-64) · Krafton Jungle SW-AI Lab 13기
+
+| 프로젝트 | 기간 | 팀 | 결과 |
+|---|---|---|---|
+| Project 1: Threads | 2026.10 (7주차) | 2인 (김은기, 최무헌) | 27/27 PASS · 3개 환경 1,080회 반복 실행 전부 PASS |
+| Project 2: User Programs | 2026.10.17 – 10.21 (8주차) | 2인 페어 (김은기, 임동호) | 95/95 PASS (최종 머지 기준) |
+
+## Project 1: Threads
+
+| 파트 | 한정된 자원을 ___하는 문제 | 문제 | 해결 |
+|---|---|---|---|
+| Alarm Clock | 낭비 | busy waiting | sleep / wake |
+| Priority Scheduling | 순서 | 우선순위를 무시한 FIFO 실행 | 우선순위 정렬 + 선점 |
+| Priority Donation | 공유 | 우선순위 역전 | 기부(중첩·연쇄 최대 8단계) |
+| MLFQS | 공정 | 기아 | recent_cpu · nice 기반 재계산 |
+
+**내 역할**
+- Priority 테스트 13개를 직접 실행·분석해 요구사항을 규칙 R1~R7로 도출하고, 규칙별 근거 테스트·담당자·함수 변경사항을 정리한 설계 문서 작성
+- Priority Donation 구현: 락 대기 시 주인에게 기부, 연쇄 기부, 락 해제 시 해당 락 몫만 회수 후 재계산
+- MLFQS 테스트 분석 및 플로우차트 공동 설계·구현
+
+**트러블슈팅**
+- 빈 락 획득 시 `sema_down`이 건너뛰어져 한 락에 주인이 둘이 되는 PANIC → 획득 로직을 조건문 밖으로 이동
+- 기부 후 원래 우선순위가 갱신되지 않던 문제 → `thread_set_priority`에서 원래 값 저장 후 재계산
+- 실행 스크립트가 CRLF로 올라가 `source ./activate` 실패 → LF로 변환해 해결 (PR #37)
+
+**검증**: 타이밍에 따라 결과가 달라질 수 있어 클라우드 Linux · macOS · Windows(WSL2) 3개 환경에서 18개 테스트를 20회씩, 총 1,080회 반복 실행해 전부 통과 확인
+
+**협업**: 개인 브랜치 작업 → PR → dev 머지, dev 직접 push 차단, PR 메시지 형식 통일
+
+## Project 2: User Programs
+
+**내 역할**
+- 인자 전달, 유저 포인터 검증
+- fd 테이블(배열 → 연결 리스트 전환), create · remove · open · read · write · close
+- fork, rox(실행 중 파일 쓰기 금지), wait / exit 통합
+
+**트러블슈팅: multi-oom 커널 PANIC 2건**
+- fork 실패 시 자식이 부모의 수거 전에 사라지던 문제 → printf 추적으로 원인 확인 후, 실패해도 부모가 수거할 때까지 대기하도록 수정
+- 간헐적 TIMEOUT → 예외 시점 `rsp`가 유저 스택 영역이라는 단서로 `syscall-entry.S`를 분석해 `popq %rsp`와 `sysretq` 사이 인터럽트 틈을 발견, 핸들러 종료 후 `cli` 추가로 해결
+
+**진행 방식**: 기능마다 테스트 분석·설계 1시간 + 구현 1시간 페어 세션, TC 분석·설계 표와 트러블슈팅 기록 표로 문서화
+
+---
+
+<details>
+<summary>개발 환경 구축 가이드 (정글 배포 원문)</summary>
+
+<!-- 아래에 기존 README 내용을 그대로 두세요 -->
+
+</details>
+
+
 # 📘 Docker기반 Pintos 개발 환경 구축 가이드 
 
 이 문서는 **Windows**와 **macOS** 사용자가 Docker와 VSCode DevContainer 기능을 활용하여 Pintos OS 프로젝트를 빠르게 구축할 수 있도록 도와줍니다.
